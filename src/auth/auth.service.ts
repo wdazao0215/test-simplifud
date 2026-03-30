@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -11,6 +7,8 @@ import { LoginDto } from './dto/login.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -18,11 +16,16 @@ export class AuthService {
   ) {}
 
   async login(loginDto: LoginDto) {
+    this.logger.log(`Intento de login para: ${loginDto.email}`);
+
     const user = await this.prisma.user.findUnique({
       where: { email: loginDto.email },
     });
 
     if (!user) {
+      this.logger.warn(
+        `Login fallido: usuario no encontrado - ${loginDto.email}`,
+      );
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
@@ -32,6 +35,9 @@ export class AuthService {
     );
 
     if (!isPasswordValid) {
+      this.logger.warn(
+        `Login fallido: contraseña inválida para ${loginDto.email}`,
+      );
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
@@ -42,6 +48,10 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(payload);
+
+    this.logger.log(
+      `Login exitoso para usuario: ${user.email}, rol: ${user.role}`,
+    );
 
     return {
       accessToken,
@@ -55,11 +65,14 @@ export class AuthService {
   }
 
   async validateUser(userId: string) {
+    this.logger.debug(`Validando usuario: ${userId}`);
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
 
     if (!user) {
+      this.logger.warn(`Validación fallida: usuario no encontrado - ${userId}`);
       throw new UnauthorizedException();
     }
 

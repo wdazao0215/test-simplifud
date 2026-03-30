@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { puter } from '@heyputer/puter.js';
 import { ProductsService } from '../products/products.service';
@@ -18,6 +18,8 @@ interface CreateOrderParams {
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     private configService: ConfigService,
     private productsService: ProductsService,
@@ -26,6 +28,9 @@ export class AiService {
   ) {}
 
   async processCommand(userId: string, command: string) {
+    this.logger.log(`Procesando comando AI para usuario: ${userId}`);
+    this.logger.debug(`Comando: ${command}`);
+
     const systemPrompt = `Eres un asistente que extrae información de comandos en lenguaje natural para un sistema de pedidos de café/restaurante.
 Debes analizar el comando del usuario y determinar la intención (CREATE_PRODUCT o CREATE_ORDER).
 Para CREATE_PRODUCT, extrae: name, description (opcional), price, stock.
@@ -34,6 +39,8 @@ Para CREATE_ORDER, extrae: items (array con productName y quantity).
 Responde SOLO con JSON válido, sin texto adicional.`;
 
     try {
+      this.logger.log('Enviando comando a Puter.ai...');
+
       const response: any = await puter.ai.chat(
         `System: ${systemPrompt}\n\nUser: ${command}`,
         { model: 'gpt-4o' },
@@ -41,25 +48,40 @@ Responde SOLO con JSON válido, sin texto adicional.`;
 
       const content = response?.text || response || '';
       if (!content) {
+        this.logger.error('Puter.ai retornó respuesta vacía');
         throw new BadRequestException('No se pudo procesar el comando');
       }
+
+      this.logger.debug(`Respuesta de Puter.ai: ${content}`);
 
       const parsed = JSON.parse(content);
       const intent = parsed.intent?.toUpperCase();
 
+      this.logger.log(`Intención detectada: ${intent}`);
+
       if (intent === 'CREATE_PRODUCT') {
+        this.logger.log(
+          `Creando producto: ${JSON.stringify(parsed.parameters)}`,
+        );
         return this.handleCreateProduct(parsed.parameters);
       } else if (intent === 'CREATE_ORDER') {
+        this.logger.log(`Creando orden: ${JSON.stringify(parsed.parameters)}`);
         return this.handleCreateOrder(userId, parsed.parameters);
       }
 
+      this.logger.warn(`Intención no reconocida: ${intent}`);
       throw new BadRequestException(
         'No se pudo determinar la intención del comando. Intenta ser más específico.',
       );
     } catch (error) {
       if (error instanceof BadRequestException) {
+        this.logger.warn(`Error de negocio: ${error.message}`);
         throw error;
       }
+      this.logger.error(
+        `Error al procesar comando: ${error.message}`,
+        error.stack,
+      );
       throw new BadRequestException(
         `Error al procesar el comando: ${error.message}`,
       );
@@ -67,6 +89,8 @@ Responde SOLO con JSON válido, sin texto adicional.`;
   }
 
   private async handleCreateProduct(params: CreateProductParams) {
+    this.logger.log(`Creando producto: ${params.name}`);
+
     const product = await this.prisma.product.create({
       data: {
         name: params.name,
@@ -76,6 +100,8 @@ Responde SOLO con JSON válido, sin texto adicional.`;
         isActive: true,
       },
     });
+
+    this.logger.log(`Producto creado exitosamente: ${product.id}`);
 
     return {
       intent: 'CREATE_PRODUCT',
@@ -90,6 +116,8 @@ Responde SOLO con JSON válido, sin texto adicional.`;
   }
 
   private async handleCreateOrder(userId: string, params: CreateOrderParams) {
+    this.logger.log(`Creando orden para usuario: ${userId}`);
+
     const productNames = params.items.map((item) =>
       item.productName.toLowerCase(),
     );
@@ -102,6 +130,7 @@ Responde SOLO con JSON válido, sin texto adicional.`;
     });
 
     if (products.length === 0) {
+      this.logger.warn('No se encontraron productos disponibles');
       throw new BadRequestException('No se encontraron productos disponibles');
     }
 
@@ -122,6 +151,7 @@ Responde SOLO con JSON válido, sin texto adicional.`;
       );
 
     if (orderItems.length === 0) {
+      this.logger.warn('No se pudieron crear los items de la orden');
       throw new BadRequestException(
         'No se pudieron crear los items de la orden',
       );
@@ -130,6 +160,8 @@ Responde SOLO con JSON válido, sin texto adicional.`;
     const order = await this.ordersService.create(userId, {
       items: orderItems,
     });
+
+    this.logger.log(`Orden creada exitosamente: ${order.id}`);
 
     return {
       intent: 'CREATE_ORDER',
