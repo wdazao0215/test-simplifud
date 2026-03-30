@@ -6,15 +6,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BadRequestException } from '@nestjs/common';
 import { AiService } from './ai.service';
 
-jest.mock('@heyputer/puter.js', () => ({
-  puter: {
-    ai: {
-      chat: jest.fn(),
-    },
-  },
-}));
+const mockPuterAI = {
+  chat: jest.fn(),
+};
 
-import { puter } from '@heyputer/puter.js';
+jest.mock('@heyputer/puter.js/src/init.cjs', () => ({
+  init: jest.fn(() => ({
+    ai: mockPuterAI,
+  })),
+}));
 
 describe('AiService', () => {
   let service: AiService;
@@ -22,7 +22,10 @@ describe('AiService', () => {
   let ordersService: OrdersService;
 
   const mockConfigService = {
-    get: jest.fn(),
+    get: jest.fn((key: string) => {
+      if (key === 'PUTER_AUTH_TOKEN') return 'test-token';
+      return null;
+    }),
   };
 
   const mockProductsService = {
@@ -74,7 +77,7 @@ describe('AiService', () => {
         }),
       };
 
-      (puter.ai.chat as jest.Mock).mockResolvedValue(mockResponse);
+      mockPuterAI.chat.mockResolvedValue(mockResponse);
 
       const mockCreate = {
         id: 'product-new',
@@ -108,7 +111,7 @@ describe('AiService', () => {
         }),
       };
 
-      (puter.ai.chat as jest.Mock).mockResolvedValue(mockResponse);
+      mockPuterAI.chat.mockResolvedValue(mockResponse);
 
       const mockProducts = [
         { id: 'product-1', name: 'Café Americano', isActive: true },
@@ -144,7 +147,7 @@ describe('AiService', () => {
         }),
       };
 
-      (puter.ai.chat as jest.Mock).mockResolvedValue(mockResponse);
+      mockPuterAI.chat.mockResolvedValue(mockResponse);
 
       await expect(
         service.processCommand(userId, 'random command'),
@@ -161,7 +164,7 @@ describe('AiService', () => {
         }),
       };
 
-      (puter.ai.chat as jest.Mock).mockResolvedValue(mockResponse);
+      mockPuterAI.chat.mockResolvedValue(mockResponse);
       mockPrisma.product.findMany.mockResolvedValue([]);
 
       await expect(
@@ -170,7 +173,7 @@ describe('AiService', () => {
     });
 
     it('should throw BadRequestException when Puter returns empty response', async () => {
-      (puter.ai.chat as jest.Mock).mockResolvedValue(null);
+      mockPuterAI.chat.mockResolvedValue(null);
 
       await expect(
         service.processCommand(userId, 'test command'),

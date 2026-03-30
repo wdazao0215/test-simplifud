@@ -84,6 +84,11 @@ Responde SOLO con JSON válido, sin texto adicional.`;
         throw new BadRequestException('No se pudo procesar el comando');
       }
 
+      content = content
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim();
+
       this.logger.debug(`Contenido extraído: ${content}`);
 
       let parsed: any;
@@ -96,18 +101,18 @@ Responde SOLO con JSON válido, sin texto adicional.`;
         );
       }
 
-      const intent = parsed.intent?.toUpperCase();
+      const intent = (parsed.intent || parsed.intention)?.toUpperCase();
+      const params = parsed.parameters || parsed;
 
       this.logger.log(`Intención detectada: ${intent}`);
+      this.logger.debug(`Parámetros: ${JSON.stringify(params)}`);
 
       if (intent === 'CREATE_PRODUCT') {
-        this.logger.log(
-          `Creando producto: ${JSON.stringify(parsed.parameters)}`,
-        );
-        return this.handleCreateProduct(parsed.parameters);
+        this.logger.log(`Creando producto: ${JSON.stringify(params)}`);
+        return this.handleCreateProduct(params);
       } else if (intent === 'CREATE_ORDER') {
-        this.logger.log(`Creando orden: ${JSON.stringify(parsed.parameters)}`);
-        return this.handleCreateOrder(userId, parsed.parameters);
+        this.logger.log(`Creando orden: ${JSON.stringify(params)}`);
+        return this.handleCreateOrder(userId, params);
       }
 
       this.logger.warn(`Intención no reconocida: ${intent}`);
