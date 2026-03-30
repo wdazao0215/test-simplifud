@@ -46,15 +46,41 @@ Responde SOLO con JSON válido, sin texto adicional.`;
         { model: 'gpt-4o' },
       );
 
-      const content = response?.text || response || '';
-      if (!content) {
-        this.logger.error('Puter.ai retornó respuesta vacía');
+      this.logger.debug(
+        `Respuesta cruda de Puter.ai: ${JSON.stringify(response)}`,
+      );
+
+      let content = '';
+
+      if (response?.text) {
+        content = response.text;
+      } else if (response?.message?.content) {
+        content = response.message.content;
+      } else if (typeof response === 'string') {
+        content = response;
+      } else if (response?.choices?.[0]?.message?.content) {
+        content = response.choices[0].message.content;
+      } else {
+        content = JSON.stringify(response);
+      }
+
+      if (!content || content === 'undefined') {
+        this.logger.error('Puter.ai retornó respuesta vacía', { response });
         throw new BadRequestException('No se pudo procesar el comando');
       }
 
-      this.logger.debug(`Respuesta de Puter.ai: ${content}`);
+      this.logger.debug(`Contenido extraído: ${content}`);
 
-      const parsed = JSON.parse(content);
+      let parsed: any;
+      try {
+        parsed = JSON.parse(content);
+      } catch (parseError) {
+        this.logger.error(`Respuesta no es JSON válido: ${content}`);
+        throw new BadRequestException(
+          'La respuesta del AI no es válida. Intenta ser más específico.',
+        );
+      }
+
       const intent = parsed.intent?.toUpperCase();
 
       this.logger.log(`Intención detectada: ${intent}`);
