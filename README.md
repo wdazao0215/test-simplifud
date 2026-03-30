@@ -225,7 +225,7 @@ npm run test:e2e
 
 5. **Swagger**: Documentación automática de API con @nestjs/swagger.
 
-6. **Integración LLM**: Endpoint `/ai/command` que usa OpenAI GPT para procesar lenguaje natural y crear productos u órdenes.
+6. **Integración LLM**: Endpoint `/ai/command` que usa Puter.ai (gratuito, sin API key) para procesar lenguaje natural y crear productos u órdenes.
 
 ## Integración LLM (Plus)
 
@@ -233,11 +233,7 @@ El endpoint `/ai/command` permite crear productos y órdenes usando lenguaje nat
 
 ### Configuración
 
-Agregar la API key de OpenAI en el archivo `.env`:
-
-```env
-OPENAI_API_KEY="sk-..."
-```
+No requiere configuración adicional. Puter.ai es gratuito y no necesita API key.
 
 ### Ejemplos de Uso
 
@@ -262,7 +258,7 @@ curl -X POST http://localhost:3000/ai/command \
 ### Diseño de la Implementación
 
 1. El endpoint recibe un comando en lenguaje natural
-2. Se envía a OpenAI GPT con un prompt que indica el formato esperado
+2. Se envía a Puter.ai (GPT-4o) con un prompt que indica el formato esperado
 3. El LLM retorna un JSON con la intención (CREATE_PRODUCT o CREATE_ORDER) y los parámetros
 4. El servicio ejecuta la acción correspondiente usando los datos extraídos
 5. Se retorna el resultado al usuario

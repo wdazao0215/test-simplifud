@@ -6,19 +6,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BadRequestException } from '@nestjs/common';
 import { AiService } from './ai.service';
 
-const mockOpenAI = {
-  chat: {
-    completions: {
-      create: jest.fn(),
+jest.mock('@heyputer/puter.js', () => ({
+  puter: {
+    ai: {
+      chat: jest.fn(),
     },
   },
-};
+}));
 
-jest.mock('openai', () => {
-  return {
-    OpenAI: jest.fn().mockImplementation(() => mockOpenAI),
-  };
-});
+import { puter } from '@heyputer/puter.js';
 
 describe('AiService', () => {
   let service: AiService;
@@ -26,10 +22,7 @@ describe('AiService', () => {
   let ordersService: OrdersService;
 
   const mockConfigService = {
-    get: jest.fn((key: string) => {
-      if (key === 'OPENAI_API_KEY') return 'test-api-key';
-      return null;
-    }),
+    get: jest.fn(),
   };
 
   const mockProductsService = {
@@ -68,51 +61,20 @@ describe('AiService', () => {
   describe('processCommand', () => {
     const userId = 'user-uuid';
 
-    it('should throw BadRequestException when OpenAI API key is not configured', async () => {
-      const mockConfigWithoutKey = {
-        get: jest.fn((key: string) => {
-          if (key === 'OPENAI_API_KEY') return undefined;
-          return null;
+    it('should process CREATE_PRODUCT command successfully', async () => {
+      const mockResponse = {
+        text: JSON.stringify({
+          intent: 'CREATE_PRODUCT',
+          parameters: {
+            name: 'Latte de Vainilla',
+            description: 'Delicioso latte con vainilla',
+            price: 55,
+            stock: 80,
+          },
         }),
       };
 
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          AiService,
-          { provide: ConfigService, useValue: mockConfigWithoutKey },
-          { provide: ProductsService, useValue: mockProductsService },
-          { provide: OrdersService, useValue: mockOrdersService },
-          { provide: PrismaService, useValue: mockPrisma },
-        ],
-      }).compile();
-
-      const serviceWithoutKey = module.get<AiService>(AiService);
-
-      await expect(
-        serviceWithoutKey.processCommand(userId, 'test command'),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should process CREATE_PRODUCT command successfully', async () => {
-      const mockResponse = {
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                intent: 'CREATE_PRODUCT',
-                parameters: {
-                  name: 'Latte de Vainilla',
-                  description: 'Delicioso latte con vainilla',
-                  price: 55,
-                  stock: 80,
-                },
-              }),
-            },
-          },
-        ],
-      };
-
-      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+      (puter.ai.chat as jest.Mock).mockResolvedValue(mockResponse);
 
       const mockCreate = {
         id: 'product-new',
@@ -138,21 +100,15 @@ describe('AiService', () => {
 
     it('should process CREATE_ORDER command successfully', async () => {
       const mockResponse = {
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                intent: 'CREATE_ORDER',
-                parameters: {
-                  items: [{ productName: 'Café Americano', quantity: 2 }],
-                },
-              }),
-            },
+        text: JSON.stringify({
+          intent: 'CREATE_ORDER',
+          parameters: {
+            items: [{ productName: 'Café Americano', quantity: 2 }],
           },
-        ],
+        }),
       };
 
-      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+      (puter.ai.chat as jest.Mock).mockResolvedValue(mockResponse);
 
       const mockProducts = [
         { id: 'product-1', name: 'Café Americano', isActive: true },
@@ -182,19 +138,13 @@ describe('AiService', () => {
 
     it('should throw BadRequestException for unrecognized intent', async () => {
       const mockResponse = {
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                intent: 'UNKNOWN_ACTION',
-                parameters: {},
-              }),
-            },
-          },
-        ],
+        text: JSON.stringify({
+          intent: 'UNKNOWN_ACTION',
+          parameters: {},
+        }),
       };
 
-      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+      (puter.ai.chat as jest.Mock).mockResolvedValue(mockResponse);
 
       await expect(
         service.processCommand(userId, 'random command'),
@@ -203,21 +153,15 @@ describe('AiService', () => {
 
     it('should throw BadRequestException when no products found for order', async () => {
       const mockResponse = {
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                intent: 'CREATE_ORDER',
-                parameters: {
-                  items: [{ productName: 'Nonexistent', quantity: 1 }],
-                },
-              }),
-            },
+        text: JSON.stringify({
+          intent: 'CREATE_ORDER',
+          parameters: {
+            items: [{ productName: 'Nonexistent', quantity: 1 }],
           },
-        ],
+        }),
       };
 
-      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+      (puter.ai.chat as jest.Mock).mockResolvedValue(mockResponse);
       mockPrisma.product.findMany.mockResolvedValue([]);
 
       await expect(
@@ -225,12 +169,8 @@ describe('AiService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should throw BadRequestException when OpenAI returns empty response', async () => {
-      const mockResponse = {
-        choices: [],
-      };
-
-      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+    it('should throw BadRequestException when Puter returns empty response', async () => {
+      (puter.ai.chat as jest.Mock).mockResolvedValue(null);
 
       await expect(
         service.processCommand(userId, 'test command'),

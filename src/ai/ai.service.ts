@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OpenAI } from 'openai';
+import { puter } from '@heyputer/puter.js';
 import { ProductsService } from '../products/products.service';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,64 +18,52 @@ interface CreateOrderParams {
 
 @Injectable()
 export class AiService {
-  private openai: OpenAI | null = null;
-
   constructor(
     private configService: ConfigService,
     private productsService: ProductsService,
     private ordersService: OrdersService,
     private prisma: PrismaService,
-  ) {
-    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    if (apiKey) {
-      this.openai = new OpenAI({ apiKey });
-    }
-  }
+  ) {}
 
   async processCommand(userId: string, command: string) {
-    if (!this.openai) {
-      throw new BadRequestException(
-        'OpenAI no está configurado. Agrega OPENAI_API_KEY en el archivo .env',
-      );
-    }
-
-    const response = await this.openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `Eres un asistente que extrae información de comandos en lenguaje natural para un sistema de pedidos de café/restaurante.
+    const systemPrompt = `Eres un asistente que extrae información de comandos en lenguaje natural para un sistema de pedidos de café/restaurante.
 Debes analizar el comando del usuario y determinar la intención (CREATE_PRODUCT o CREATE_ORDER).
 Para CREATE_PRODUCT, extrae: name, description (opcional), price, stock.
 Para CREATE_ORDER, extrae: items (array con productName y quantity).
 
-Responde SOLO con JSON válido, sin texto adicional.`,
-        },
-        {
-          role: 'user',
-          content: command,
-        },
-      ],
-      response_format: { type: 'json_object' },
-    });
+Responde SOLO con JSON válido, sin texto adicional.`;
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new BadRequestException('No se pudo procesar el comando');
+    try {
+      const response: any = await puter.ai.chat(
+        `System: ${systemPrompt}\n\nUser: ${command}`,
+        { model: 'gpt-4o' },
+      );
+
+      const content = response?.text || response || '';
+      if (!content) {
+        throw new BadRequestException('No se pudo procesar el comando');
+      }
+
+      const parsed = JSON.parse(content);
+      const intent = parsed.intent?.toUpperCase();
+
+      if (intent === 'CREATE_PRODUCT') {
+        return this.handleCreateProduct(parsed.parameters);
+      } else if (intent === 'CREATE_ORDER') {
+        return this.handleCreateOrder(userId, parsed.parameters);
+      }
+
+      throw new BadRequestException(
+        'No se pudo determinar la intención del comando. Intenta ser más específico.',
+      );
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al procesar el comando: ${error.message}`,
+      );
     }
-
-    const parsed = JSON.parse(content);
-    const intent = parsed.intent?.toUpperCase();
-
-    if (intent === 'CREATE_PRODUCT') {
-      return this.handleCreateProduct(parsed.parameters);
-    } else if (intent === 'CREATE_ORDER') {
-      return this.handleCreateOrder(userId, parsed.parameters);
-    }
-
-    throw new BadRequestException(
-      'No se pudo determinar la intención del comando. Intenta ser más específico.',
-    );
   }
 
   private async handleCreateProduct(params: CreateProductParams) {
