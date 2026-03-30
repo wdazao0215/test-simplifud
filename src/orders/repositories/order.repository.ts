@@ -4,18 +4,11 @@ import {
   PaginationDto,
   PaginatedResult,
 } from '../../common/dto/pagination.dto';
-
-enum OrderStatus {
-  PENDING = 'PENDING',
-  CONFIRMED = 'CONFIRMED',
-  SHIPPED = 'SHIPPED',
-  DELIVERED = 'DELIVERED',
-  CANCELLED = 'CANCELLED',
-}
+import { OrderStatus } from '@prisma/client';
 
 @Injectable()
 export class OrderRepository {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async create(data: {
     userId: string;

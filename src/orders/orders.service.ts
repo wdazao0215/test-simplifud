@@ -2,20 +2,15 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { OrderRepository } from './repositories/order.repository';
 import { ProductsService } from '../products/products.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
-
-enum OrderStatus {
-  PENDING = 'PENDING',
-  CONFIRMED = 'CONFIRMED',
-  SHIPPED = 'SHIPPED',
-  DELIVERED = 'DELIVERED',
-  CANCELLED = 'CANCELLED',
-}
+import { OrderStatus } from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
@@ -24,7 +19,8 @@ export class OrdersService {
   constructor(
     private orderRepository: OrderRepository,
     private productsService: ProductsService,
-  ) {}
+    private prisma: PrismaService,
+  ) { }
 
   async create(userId: string, createOrderDto: CreateOrderDto) {
     this.logger.log(`Creando orden para usuario: ${userId}`);
@@ -67,7 +63,7 @@ export class OrdersService {
         this.logger.warn(
           `Stock insuficiente para ${product.name}. Disponible: ${product.stock}, solicitado: ${item.quantity}`,
         );
-        throw new BadRequestException(
+        throw new ConflictException(
           `Stock insuficiente para "${product.name}". Disponible: ${product.stock}, solicitado: ${item.quantity}`,
         );
       }
@@ -85,11 +81,34 @@ export class OrdersService {
 
     this.logger.log(`Orden procesada. Total: ${total}`);
 
-    const order = await this.orderRepository.create({
-      userId,
-      status: OrderStatus.PENDING,
-      total,
-      items: orderItems,
+    // Usar transacción para crear orden y descontar stock atómicamente
+    const order = await this.prisma.$transaction(async (tx) => {
+      // Descontar stock de cada producto
+      for (const item of orderItems) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { decrement: item.quantity } },
+        });
+      }
+
+      // Crear la orden con sus items
+      return tx.order.create({
+        data: {
+          userId,
+          status: OrderStatus.PENDING,
+          total,
+          items: {
+            create: orderItems,
+          },
+        },
+        include: {
+          items: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
     });
 
     this.logger.log(`Orden creada exitosamente. ID: ${order.id}`);

@@ -107,13 +107,14 @@ async function main() {
   ];
 
   for (const product of products) {
-    await prisma.product.upsert({
-      where: { id: product.name.toLowerCase().replace(/ /g, '-') },
-      update: {},
-      create: product,
+    const existing = await prisma.product.findFirst({
+      where: { name: product.name },
     });
+    if (!existing) {
+      await prisma.product.create({ data: product });
+    }
   }
-  console.log('Created products:', products.length);
+  console.log('Seeded products:', products.length);
 
   console.log('Seed completed successfully!');
 }

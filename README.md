@@ -77,7 +77,7 @@ DATABASE_URL="postgresql://user:password@localhost:5432/simplifud?schema=public"
 JWT_SECRET="your-super-secret-jwt-key-change-in-production"
 JWT_EXPIRES_IN="1d"
 PORT=3000
-OPENAI_API_KEY=""
+PUTER_AUTH_TOKEN=""
 ```
 
 ### 4. Configurar Base de Datos

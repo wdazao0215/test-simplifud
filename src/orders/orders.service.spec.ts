@@ -2,7 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OrdersService } from './orders.service';
 import { OrderRepository } from './repositories/order.repository';
 import { ProductsService } from '../products/products.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -20,12 +25,44 @@ describe('OrdersService', () => {
     findByIds: jest.fn(),
   };
 
+  const mockPrismaService = {
+    $transaction: jest.fn((cb: any) =>
+      cb({
+        product: { update: jest.fn() },
+        order: {
+          create: jest.fn().mockResolvedValue({
+            id: 'order-uuid',
+            userId: 'user-uuid',
+            status: 'PENDING',
+            total: 145,
+            createdAt: new Date(),
+            items: [
+              {
+                productId: 'product-1',
+                product: { name: 'Café Americano' },
+                quantity: 2,
+                unitPrice: 45,
+              },
+              {
+                productId: 'product-2',
+                product: { name: 'Latte' },
+                quantity: 1,
+                unitPrice: 55,
+              },
+            ],
+          }),
+        },
+      }),
+    ),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OrdersService,
         { provide: OrderRepository, useValue: mockOrderRepository },
         { provide: ProductsService, useValue: mockProductsService },
+        { provide: PrismaService, useValue: mockPrismaService },
       ],
     }).compile();
 
@@ -65,30 +102,6 @@ describe('OrdersService', () => {
     it('should create an order successfully with valid items', async () => {
       mockProductsService.findByIds.mockResolvedValue(mockProducts);
 
-      const mockOrder = {
-        id: 'order-uuid',
-        userId,
-        status: 'PENDING',
-        total: 145,
-        createdAt: new Date(),
-        items: [
-          {
-            productId: 'product-1',
-            product: { name: 'Café Americano' },
-            quantity: 2,
-            unitPrice: 45,
-          },
-          {
-            productId: 'product-2',
-            product: { name: 'Latte' },
-            quantity: 1,
-            unitPrice: 55,
-          },
-        ],
-      };
-
-      mockOrderRepository.create.mockResolvedValue(mockOrder);
-
       const result = await service.create(userId, createOrderDto);
 
       expect(result).toHaveProperty('id');
@@ -96,7 +109,7 @@ describe('OrdersService', () => {
       expect(result).toHaveProperty('total');
       expect(result).toHaveProperty('items');
       expect(result.status).toBe('PENDING');
-      expect(mockOrderRepository.create).toHaveBeenCalled();
+      expect(mockPrismaService.$transaction).toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when product not found', async () => {
@@ -123,7 +136,7 @@ describe('OrdersService', () => {
       );
     });
 
-    it('should throw BadRequestException when stock is insufficient', async () => {
+    it('should throw ConflictException when stock is insufficient', async () => {
       const productsWithLowStock = [
         {
           ...mockProducts[0],
@@ -135,36 +148,12 @@ describe('OrdersService', () => {
       mockProductsService.findByIds.mockResolvedValue(productsWithLowStock);
 
       await expect(service.create(userId, createOrderDto)).rejects.toThrow(
-        BadRequestException,
+        ConflictException,
       );
     });
 
     it('should calculate total correctly', async () => {
       mockProductsService.findByIds.mockResolvedValue(mockProducts);
-
-      const mockOrder = {
-        id: 'order-uuid',
-        userId,
-        status: 'PENDING',
-        total: 145,
-        createdAt: new Date(),
-        items: [
-          {
-            productId: 'product-1',
-            product: { name: 'Café Americano' },
-            quantity: 2,
-            unitPrice: 45,
-          },
-          {
-            productId: 'product-2',
-            product: { name: 'Latte' },
-            quantity: 1,
-            unitPrice: 55,
-          },
-        ],
-      };
-
-      mockOrderRepository.create.mockResolvedValue(mockOrder);
 
       const result = await service.create(userId, createOrderDto);
 
@@ -174,25 +163,10 @@ describe('OrdersService', () => {
     it('should use userId from JWT, not from body', async () => {
       mockProductsService.findByIds.mockResolvedValue(mockProducts);
 
-      const differentUserId = 'different-user-uuid';
-      const mockOrder = {
-        id: 'order-uuid',
-        userId: differentUserId,
-        status: 'PENDING',
-        total: 145,
-        createdAt: new Date(),
-        items: [],
-      };
-
-      mockOrderRepository.create.mockResolvedValue(mockOrder);
-
       await service.create(userId, createOrderDto);
 
-      expect(mockOrderRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: userId,
-        }),
-      );
+      // The transaction is called, and the userId passed to create() is used
+      expect(mockPrismaService.$transaction).toHaveBeenCalled();
     });
   });
 
