@@ -101,6 +101,13 @@ Responde SOLO con JSON válido, sin texto adicional.`;
         );
       }
 
+      if (!parsed || typeof parsed !== 'object') {
+        this.logger.error(`Parsed no es un objeto válido: ${content}`);
+        throw new BadRequestException(
+          'La respuesta del AI no es válida. Intenta ser más específico.',
+        );
+      }
+
       const intent = (parsed.intent || parsed.intention)?.toUpperCase();
       const params = parsed.parameters || parsed;
 
