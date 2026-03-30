@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { puter } from '@heyputer/puter.js';
+import { init } from '@heyputer/puter.js/src/init.cjs';
 import { ProductsService } from '../products/products.service';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,15 +19,30 @@ interface CreateOrderParams {
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
+  private puter: any;
 
   constructor(
     private configService: ConfigService,
     private productsService: ProductsService,
     private ordersService: OrdersService,
     private prisma: PrismaService,
-  ) {}
+  ) {
+    const authToken = this.configService.get<string>('PUTER_AUTH_TOKEN');
+    if (authToken) {
+      this.puter = init(authToken);
+      this.logger.log('Puter.ai inicializado correctamente');
+    } else {
+      this.logger.warn('PUTER_AUTH_TOKEN no configurado');
+    }
+  }
 
   async processCommand(userId: string, command: string) {
+    if (!this.puter) {
+      throw new BadRequestException(
+        'Puter.ai no está configurado. Agrega PUTER_AUTH_TOKEN en el archivo .env',
+      );
+    }
+
     this.logger.log(`Procesando comando AI para usuario: ${userId}`);
     this.logger.debug(`Comando: ${command}`);
 
@@ -41,7 +56,7 @@ Responde SOLO con JSON válido, sin texto adicional.`;
     try {
       this.logger.log('Enviando comando a Puter.ai...');
 
-      const response: any = await puter.ai.chat(
+      const response: any = await this.puter.ai.chat(
         `System: ${systemPrompt}\n\nUser: ${command}`,
         { model: 'gpt-4o' },
       );
